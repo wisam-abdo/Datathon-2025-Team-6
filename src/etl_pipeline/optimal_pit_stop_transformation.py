@@ -1,7 +1,3 @@
-# Determined input data: Constructor, Circuit,  current_possition, current_lap, cumulative_previous_lap_times, last_pit_stop_lap 
-
-# Prediction output: cumulative_position_gain_5_laps, net_race_time_change
-
 import os
 import sys
 from extract_from_snowflake import get_optimal_pit_stop_data
@@ -61,7 +57,37 @@ def calc_positional_change(race_data, pit_stop_rows):
 
 
 def calc_avg_future_laps(race_data, pit_stop_rows):
-    
+    race_data = race_data.drop("NAME", axis=1)
+    race_data.astype(float)
+    formatted_race_data = race_data.copy()
+    formatted_race_data["LAP_TIME_MILLISECONDS"] -= formatted_race_data["PIT_STOP_DURATION"].fillna(0)
+
+    avg_fut_laps = pit_stop_rows.copy()
+    avg_times = []
+
+    for index, row in pit_stop_rows.iterrows():
+        race_id = row["RACEID"]
+        constructor_id = row["CONSTRUCTORID"]
+        circuit_id = row["CIRCUITID"]
+        pit_stop_lap = row["CURRENT_LAP"]
+
+        conditions = (race_data["RACEID"] == race_id) & \
+        (formatted_race_data["CONSTRUCTORID"] == constructor_id) & \
+        (formatted_race_data["CIRCUITID"] == circuit_id) & \
+        (formatted_race_data["CURRENT_LAP"] >= pit_stop_lap) & \
+        (formatted_race_data["CURRENT_LAP"] < pit_stop_lap + 5)
+
+        previous_laps = formatted_race_data[conditions].sort_values("CURRENT_LAP")
+
+        if len(previous_laps) > 0:
+            avg_time = previous_laps["LAP_TIME_MILLISECONDS"].mean()
+        else:
+            avg_time = None
+        
+        avg_times.append(avg_time)
+
+    avg_fut_laps["AVG_FUTURE_LAPS"] = avg_times
+    return avg_fut_laps
 
 
 def format_data(race_data):
@@ -84,8 +110,10 @@ def format_data(race_data):
     pit_stop_rows = pit_stop_rows[conditionals]
     
     pit_stop_rows = calc_avg_previous_laps(race_data, pit_stop_rows)
-
     pit_stop_rows = calc_positional_change(race_data, pit_stop_rows)
+    pit_stop_rows = calc_avg_future_laps(race_data, pit_stop_rows)
+
+    pit_stop_rows = pit_stop_rows.drop(["PIT_STOP_DURATION", "STOP"], axis=1)
 
     return pit_stop_rows
 
