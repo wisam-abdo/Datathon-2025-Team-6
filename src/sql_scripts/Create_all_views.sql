@@ -67,3 +67,41 @@ on r.raceid = ps.raceid
 join event.datathon_2025_team_zeta.drivers as d
 on ps.driverid = d.driverid
 );
+
+-- Data to predict optimal pitstop lap--
+create or replace view optimal_pit_stop_model as(
+select 
+    ra.raceid,
+    d.driverid,
+    ci.circuitid,
+    co.constructorid,
+    co.name,
+    lt.position,
+    lt.lap as current_lap,
+    lt.milliseconds as lap_time_milliseconds,
+    ps.stop,
+    ps.milliseconds as pit_stop_duration
+from 
+    races as ra
+join
+    ciruits as ci
+    on ra.circuitid = ci.circuitid
+join
+    results as re
+    on ra.raceid = re.raceid
+join
+    drivers as d
+    on re.driverid = d.driverid
+join
+    constructors as co
+    on re.constructorid = co.constructorid
+join
+    lap_times as lt
+    on ra.raceid = lt.raceid
+    and d.driverid = lt.driverid
+left join
+    pit_stops as ps
+    on ra.raceid = ps.raceid
+    and lt.driverid = ps.driverid
+    and lt.lap = ps.lap
+);

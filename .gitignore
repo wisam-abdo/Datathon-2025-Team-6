@@ -192,3 +192,7 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+*plot_pred_vs_actual_analysis_data
+*plot_pred_vs_current_analysis_data
+*test_case_data.csv
