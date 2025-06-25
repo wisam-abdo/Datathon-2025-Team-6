@@ -1,16 +1,7 @@
-import os
 import sys
-from extract_from_snowflake import get_optimal_pit_stop_data
+import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.create_db_connection import connect_to_snowflake
-
-
-def get_data():
-    print("Establishing Connection...")
-    conn = connect_to_snowflake()
-    print("Retriving 'optimal_pit_stop_data' from the Database...")
-    race_data = get_optimal_pit_stop_data(conn)
-    return race_data
+from etl_pipeline.extract_from_snowflake import get_data
 
 def calc_avg_previous_laps(race_data, pit_stop_rows):
     avg_prev_laps = pit_stop_rows.copy()
@@ -20,11 +11,13 @@ def calc_avg_previous_laps(race_data, pit_stop_rows):
         race_id = row["RACEID"]
         constructor_id = row["CONSTRUCTORID"]
         circuit_id = row["CIRCUITID"]
+        driver_id = row["DRIVERID"]
         pit_stop_lap = row["CURRENT_LAP"]
 
         conditions = (race_data["RACEID"] == race_id) & \
         (race_data["CONSTRUCTORID"] == constructor_id) & \
         (race_data["CIRCUITID"] == circuit_id) & \
+        (race_data["DRIVERID"] == driver_id) & \
         (race_data["CURRENT_LAP"] < pit_stop_lap) & \
         (race_data["CURRENT_LAP"] >= pit_stop_lap - 5)
 
@@ -57,8 +50,6 @@ def calc_positional_change(race_data, pit_stop_rows):
 
 
 def calc_avg_future_laps(race_data, pit_stop_rows):
-    race_data = race_data.drop("NAME", axis=1)
-    race_data.astype(float)
     formatted_race_data = race_data.copy()
     formatted_race_data["LAP_TIME_MILLISECONDS"] -= formatted_race_data["PIT_STOP_DURATION"].fillna(0)
 
@@ -69,11 +60,13 @@ def calc_avg_future_laps(race_data, pit_stop_rows):
         race_id = row["RACEID"]
         constructor_id = row["CONSTRUCTORID"]
         circuit_id = row["CIRCUITID"]
+        driver_id = row["DRIVERID"]
         pit_stop_lap = row["CURRENT_LAP"]
 
         conditions = (race_data["RACEID"] == race_id) & \
         (formatted_race_data["CONSTRUCTORID"] == constructor_id) & \
         (formatted_race_data["CIRCUITID"] == circuit_id) & \
+        (formatted_race_data["DRIVERID"] == driver_id) & \
         (formatted_race_data["CURRENT_LAP"] >= pit_stop_lap) & \
         (formatted_race_data["CURRENT_LAP"] < pit_stop_lap + 5)
 
@@ -91,14 +84,14 @@ def calc_avg_future_laps(race_data, pit_stop_rows):
 
 
 def format_data(race_data):
+    print("Name Column dropped!")
+    race_data = race_data.drop("NAME", axis=1)
+    print("Values converted to float type")
+    race_data.astype(float)
     print("Begining data reformatting...")
     pit_stop_rows = race_data.copy()
-    print("Name Column dropped!")
-    pit_stop_rows = pit_stop_rows.drop("NAME", axis=1)
     print("Rows in which a pitstop occurs pulled!")
     pit_stop_rows = pit_stop_rows[~pit_stop_rows["STOP"].isnull()]
-    print("Values converted to float type")
-    pit_stop_rows.astype(float)
     print("Ensuring data has a five pitstop")
     previous_row = pit_stop_rows.shift(-1)
     # Conditionals created to evaluate the same driver's race pit_stops and not pitstops across different races/drivers.
@@ -110,14 +103,39 @@ def format_data(race_data):
     pit_stop_rows = pit_stop_rows[conditionals]
     
     pit_stop_rows = calc_avg_previous_laps(race_data, pit_stop_rows)
+    pit_stop_rows.dropna(subset=['AVG_PREVIOUS_LAPS'], inplace=True)
     pit_stop_rows = calc_positional_change(race_data, pit_stop_rows)
     pit_stop_rows = calc_avg_future_laps(race_data, pit_stop_rows)
+    pit_stop_rows.dropna(subset=['AVG_FUTURE_LAPS'], inplace=True)
 
     pit_stop_rows = pit_stop_rows.drop(["PIT_STOP_DURATION", "STOP"], axis=1)
 
-    return pit_stop_rows
+    unique_races = pit_stop_rows['RACEID'].unique()
+    split = max(1, int(len(unique_races) * 0.1))
+    
+    train_races = unique_races[:-split]
+    test_races = unique_races[-split:]
+
+    train_data = pit_stop_rows[pit_stop_rows["RACEID"].isin(train_races)]
+    test_data = pit_stop_rows[pit_stop_rows["RACEID"].isin(test_races)]
+
+    x_train = train_data[["RACEID", "DRIVERID", "CIRCUITID", "CONSTRUCTORID", "POSITION", "CURRENT_LAP", "LAP_TIME_MILLISECONDS", "AVG_PREVIOUS_LAPS"]]
+    y_train = train_data[["NEW_POSITION", "AVG_FUTURE_LAPS"]]
+    y_test = test_data[["NEW_POSITION", "AVG_FUTURE_LAPS"]]
+    x_test = test_data[["RACEID", "DRIVERID", "CIRCUITID", "CONSTRUCTORID", "POSITION", "CURRENT_LAP", "LAP_TIME_MILLISECONDS", "AVG_PREVIOUS_LAPS"]]
+
+    test_case = race_data[(race_data["RACEID"] == test_races[0]) & (race_data["CONSTRUCTORID"] == 1) & (race_data["DRIVERID"] == 1)]
+    test_case = test_case.drop(["STOP", "PIT_STOP_DURATION"], axis = 1)
+
+    test_case = calc_avg_previous_laps(race_data, test_case)
+    test_case = calc_positional_change(race_data, test_case)
+    test_case = calc_avg_future_laps(race_data, test_case)
+
+    return x_train, x_test, y_train, y_test, test_case
 
     
 if __name__ == "__main__":
     data = get_data()
-    print(format_data(data))
+    x_train, x_test, y_train, y_test, test_case = format_data(data)
+
+    print(test_case)
