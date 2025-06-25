@@ -40,14 +40,19 @@ def create_model(x_train, y_train):
 
 def test_model(test_case, model, x_scaler, y_scaler):
     try:
-        os.makedirs("analysis_data")
+        os.makedirs("plot_pred_vs_actual_analysis_data")
+    except Exception as e:
+        print(e)
+
+    try:
+        os.makedirs("plot_pred_vs_current_analysis_data")
     except Exception as e:
         print(e)
 
     x_test_case = test_case[["RACEID", "DRIVERID", "CIRCUITID", "CONSTRUCTORID", "POSITION", "CURRENT_LAP", "LAP_TIME_MILLISECONDS", "AVG_PREVIOUS_LAPS"]]
     y_test_case = test_case[["NEW_POSITION", "AVG_FUTURE_LAPS"]]
 
-    y_test_case.to_csv("optimal_pit_stop_analysis_data\\actual.csv")
+    y_test_case.to_csv("plot_pred_vs_actual_analysis_data\\actual.csv")
 
     x_test_case = x_test_case.values
     x_test_case = x_scaler.transform(x_test_case)
@@ -55,7 +60,11 @@ def test_model(test_case, model, x_scaler, y_scaler):
     predictions = y_scaler.inverse_transform(predictions)
     predictions = pd.DataFrame(predictions, columns=['NEW_POSITION', "AVG_FUTURE_LAPS"])
 
-    predictions.to_csv("optimal_pit_stop_analysis_data\predictions.csv")
+    predictions.to_csv("plot_pred_vs_actual_analysis_data\predictions.csv")
+
+    current_lap_time = test_case["LAP_TIME_MILLISECONDS"]
+    predictions.to_csv("plot_pred_vs_current_analysis_data\predictions.csv")
+    current_lap_time.to_csv("plot_pred_vs_current_analysis_data\current_lap_time.csv")
 
 if __name__ == "__main__":
     data = get_data()
